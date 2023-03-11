@@ -54,18 +54,45 @@ impl TryFrom<Rc<RefCell<Chars<'_>>>> for TokenStream {
             if let Some(ch) = cs.borrow_mut().next() {
                 c = ch
             } else {
+                if let Some(t) = tokens.borrow().last() {
+                    match t {
+                        TokenTree::Group(g) => match g.token_stream.tokens.last() {
+                            Some(TokenTree::Token(t)) => match t {
+                                Token::RightParen => (),
+                                _ => {
+                                    return Err(Box::<dyn Error>::from(
+                                        format!("missing final parenthesis!").to_string(),
+                                    ));
+                                }
+                            },
+                            _ => {
+                                return Err(Box::<dyn Error>::from(
+                                    format!("missing final parenthesis!").to_string(),
+                                ));
+                            }
+                        },
+                        _ => unreachable!(),
+                    }
+                }
                 break;
             }
             match c {
                 '(' => {
                     terminate_acc();
-                    let tree = TokenTree::Group(Group {
-                        delimiter_type: DelimiterType::Parenthesis,
+                    let mut group = Group {
                         token_stream: TokenStream::try_from(cs.clone())?,
-                    });
+                    };
+                    group
+                        .token_stream
+                        .tokens
+                        .insert(0, TokenTree::Token(Token::LeftParen));
+                    let tree = TokenTree::Group(group);
                     tokens.borrow_mut().push(tree);
                 }
                 ')' => {
+                    tokens
+                        .borrow_mut()
+                        .push(TokenTree::Token(Token::RightParen));
                     terminate_acc();
                     break;
                 }
@@ -96,7 +123,6 @@ enum TokenTree {
 
 #[derive(Debug)]
 struct Group {
-    delimiter_type: DelimiterType,
     token_stream: TokenStream,
 }
 
@@ -110,6 +136,8 @@ impl TokenStream {
 enum Token {
     Ident(String),
     Literal(Literal),
+    LeftParen,
+    RightParen,
 }
 
 impl From<String> for TokenTree {
