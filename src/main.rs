@@ -1,11 +1,17 @@
 use std::cell::RefCell;
 use std::error::Error;
 use std::rc::Rc;
+use std::str::Chars;
 
 // Abstract Syntax Tree
-struct Expr {
+enum Expr {
+    Function(Function),
+    Atom(Atom),
+}
+
+struct Function {
     ident: Atom,
-    args: Vec<Atom>,
+    args: Vec<Expr>,
 }
 
 enum Atom {
@@ -17,16 +23,20 @@ struct List {
     elements: Vec<Atom>,
 }
 
+trait Parse: Sized {
+    fn parse(ts: &mut TokenStream) -> Result<Self, Box<dyn Error>>;
+}
+
 // input handling
 #[derive(Debug)]
 struct TokenStream {
-    tokens: Vec<Token>,
+    tokens: Vec<TokenTree>,
 }
 
-impl TryFrom<String> for TokenStream {
+impl TryFrom<Rc<RefCell<Chars<'_>>>> for TokenStream {
     type Error = Box<dyn Error>;
 
-    fn try_from(s: String) -> Result<TokenStream, Box<dyn Error>> {
+    fn try_from(cs: Rc<RefCell<Chars>>) -> Result<Self, Box<dyn Error>> {
         let tokens = RefCell::new(Vec::new());
         let sacc = Rc::new(RefCell::new(String::new()));
 
@@ -39,28 +49,32 @@ impl TryFrom<String> for TokenStream {
             }
         };
 
-        for c in s.chars() {
+        loop {
+            let c: char;
+            if let Some(ch) = cs.borrow_mut().next() {
+                c = ch
+            } else {
+                break;
+            }
             match c {
                 '(' => {
                     terminate_acc();
-                    tokens
-                        .borrow_mut()
-                        .push(Token::Separator(Separator::LeftParen));
+                    let tree = TokenTree::Group(Group {
+                        delimiter_type: DelimiterType::Parenthesis,
+                        token_stream: TokenStream::try_from(cs.clone())?,
+                    });
+                    tokens.borrow_mut().push(tree);
                 }
                 ')' => {
                     terminate_acc();
-                    tokens
-                        .borrow_mut()
-                        .push(Token::Separator(Separator::RightParen));
-                }
-                '+' => {
-                    terminate_acc();
-                    tokens.borrow_mut().push(Token::Operator(Operator::Plus));
+                    break;
                 }
                 ' ' => {
                     terminate_acc();
                 }
-                _ if c.is_alphanumeric() => sacc.clone().borrow_mut().push(c),
+                _ if c.is_alphanumeric() | c.is_ascii_punctuation() => {
+                    sacc.clone().borrow_mut().push(c)
+                }
                 _ => {
                     return Err(Box::<dyn Error>::from(
                         format!("unsupported character {}", c).to_string(),
@@ -75,31 +89,42 @@ impl TryFrom<String> for TokenStream {
 }
 
 #[derive(Debug)]
-enum Token {
-    Ident(String),
-    Separator(Separator),
-    Operator(Operator),
-    Literal(Literal),
+enum TokenTree {
+    Group(Group),
+    Token(Token),
 }
 
-impl From<String> for Token {
-    fn from(s: String) -> Token {
-        match s.parse::<u32>() {
-            Ok(u) => Token::Literal(Literal::UInt32(u)),
-            Err(_) => Token::Ident(s),
-        }
+#[derive(Debug)]
+struct Group {
+    delimiter_type: DelimiterType,
+    token_stream: TokenStream,
+}
+
+impl TokenStream {
+    fn parse<T: Parse>(&mut self) -> Result<T, Box<dyn Error>> {
+        T::parse(self)
     }
 }
 
 #[derive(Debug)]
-enum Separator {
-    LeftParen,
-    RightParen,
+enum Token {
+    Ident(String),
+    Literal(Literal),
+}
+
+impl From<String> for TokenTree {
+    fn from(s: String) -> Self {
+        let t = match s.parse::<u32>() {
+            Ok(u) => Token::Literal(Literal::UInt32(u)),
+            Err(_) => Token::Ident(s),
+        };
+        TokenTree::Token(t)
+    }
 }
 
 #[derive(Debug)]
-enum Operator {
-    Plus,
+enum DelimiterType {
+    Parenthesis,
 }
 
 #[derive(Debug)]
@@ -109,7 +134,8 @@ enum Literal {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prog = String::from("(first (list 1 (+ 2 3) 9))");
-    let input: TokenStream = prog.try_into()?;
+    let chars = Rc::new(RefCell::new(prog.chars()));
+    let input: TokenStream = chars.try_into()?;
     println!("tokenstream: {:?}", input);
     Ok(())
 }
