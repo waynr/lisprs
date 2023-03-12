@@ -7,7 +7,7 @@ type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;
 
 // Abstract Syntax Tree
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Expr {
     Function(Function),
     List(Vec<Expr>),
@@ -51,7 +51,7 @@ impl Parse for Expr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Function {
     name: Atom,
     args: Vec<Expr>,
@@ -105,7 +105,7 @@ impl Parse for Function {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Atom {
     Symbol(String),
     UInt32(u32),
@@ -130,7 +130,7 @@ trait Parse: Sized {
 }
 
 // input handling
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct TokenStream {
     tokens: Vec<TokenTree>,
     index: Rc<RefCell<usize>>,
@@ -245,6 +245,15 @@ impl TryFrom<Rc<RefCell<Chars<'_>>>> for TokenStream {
     }
 }
 
+impl From<Vec<TokenTree>> for TokenStream {
+    fn from(tts: Vec<TokenTree>) -> Self {
+        Self {
+            tokens: tts,
+            index: Rc::new(RefCell::new(0)),
+        }
+    }
+}
+
 impl fmt::Display for TokenStream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for tt in &self.tokens {
@@ -254,7 +263,7 @@ impl fmt::Display for TokenStream {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum TokenTree {
     Group(Group),
     Token(Token),
@@ -269,12 +278,20 @@ impl fmt::Display for TokenTree {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Group {
     token_stream: TokenStream,
 }
 
-#[derive(Debug)]
+impl From<Vec<TokenTree>> for Group {
+    fn from(tts: Vec<TokenTree>) -> Self {
+        Self {
+            token_stream: tts.into(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 enum Token {
     Ident(String),
     Literal(Literal),
@@ -303,7 +320,7 @@ impl From<String> for TokenTree {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Literal {
     UInt32(u32),
 }
@@ -327,4 +344,89 @@ fn main() -> Result<()> {
     let ast: Expr = input.parse()?;
     println!("ast: {:?}", ast);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_given_example() {
+        //let prog = String::from("(first (list 1 (+ 2 3) 9))");
+        let chars = Rc::new(RefCell::new("(first (list 1 (+ 2 3) 9))".chars()));
+        let input: Result<TokenStream> = chars.try_into();
+        assert!(input.is_ok());
+        let ts = input.unwrap();
+        assert_eq!(
+            ts,
+            TokenStream::from(Vec::from([TokenTree::Group(Group::from(Vec::from([
+                TokenTree::Token(Token::LeftParen),
+                TokenTree::Token(Token::Ident(String::from("first"))),
+                TokenTree::Group(Group::from(Vec::from([
+                    TokenTree::Token(Token::LeftParen),
+                    TokenTree::Token(Token::Ident(String::from("list"))),
+                    TokenTree::Token(Token::Literal(Literal::UInt32(1))),
+                    TokenTree::Group(Group::from(Vec::from([
+                        TokenTree::Token(Token::LeftParen),
+                        TokenTree::Token(Token::Ident(String::from("+"))),
+                        TokenTree::Token(Token::Literal(Literal::UInt32(2))),
+                        TokenTree::Token(Token::Literal(Literal::UInt32(3))),
+                        TokenTree::Token(Token::RightParen),
+                    ]))),
+                    TokenTree::Token(Token::Literal(Literal::UInt32(9))),
+                    TokenTree::Token(Token::RightParen),
+                ]))),
+                TokenTree::Token(Token::RightParen),
+            ]))),]))
+        );
+
+        let ast: Result<Expr> = ts.parse();
+        assert!(ast.is_ok());
+        assert_eq!(
+            ast.unwrap(),
+            Expr::List(Vec::from([Expr::Function(Function {
+                name: Atom::Symbol("first".to_string()),
+                args: Vec::from([Expr::Function(Function {
+                    name: Atom::Symbol("list".to_string()),
+                    args: Vec::from([
+                        Expr::Atom(Atom::UInt32(1)),
+                        Expr::Function(Function {
+                            name: Atom::Symbol("+".to_string()),
+                            args: Vec::from([
+                                Expr::Atom(Atom::UInt32(2)),
+                                Expr::Atom(Atom::UInt32(3)),
+                            ]),
+                        }),
+                        Expr::Atom(Atom::UInt32(9)),
+                    ])
+                })])
+            })]))
+        );
+    }
+
+    #[test]
+    fn test_simple_addition() -> Result<()> {
+        let chars = Rc::new(RefCell::new("(+ 2 3)".chars()));
+        let ts: TokenStream = chars.try_into()?;
+        assert_eq!(
+            ts,
+            TokenStream::from(Vec::from([TokenTree::Group(Group::from(Vec::from([
+                TokenTree::Token(Token::LeftParen),
+                TokenTree::Token(Token::Ident(String::from("+"))),
+                TokenTree::Token(Token::Literal(Literal::UInt32(2))),
+                TokenTree::Token(Token::Literal(Literal::UInt32(3))),
+                TokenTree::Token(Token::RightParen),
+            ])))]))
+        );
+
+        let ast: Expr = ts.parse()?;
+        assert_eq!(
+            ast,
+            Expr::List(Vec::from([Expr::Function(Function {
+                name: Atom::Symbol("+".to_string()),
+                args: Vec::from([Expr::Atom(Atom::UInt32(2)), Expr::Atom(Atom::UInt32(3)),]),
+            })]))
+        );
+        Ok(())
+    }
 }
