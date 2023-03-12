@@ -20,7 +20,7 @@ impl Parse for Expr {
         let mut exprs = Vec::new();
         loop {
             if let Some(expr) = ts.step(|tt| match tt {
-                TokenTree::Group(group) => match group.token_stream.peek(2) {
+                TokenTree::Group(group) => match group.token_stream.peek(1) {
                     Some(TokenTree::Token(Token::Ident(_))) => Ok(Some(Expr::Function(
                         group.token_stream.parse::<Function>()?,
                     ))),
@@ -219,10 +219,10 @@ impl TryFrom<Rc<RefCell<Chars<'_>>>> for TokenStream {
                     tokens.borrow_mut().push(tree);
                 }
                 ')' => {
+                    terminate_acc();
                     tokens
                         .borrow_mut()
                         .push(TokenTree::Token(Token::RightParen));
-                    terminate_acc();
                     break;
                 }
                 ' ' => {
