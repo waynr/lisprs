@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::fmt;
 use std::rc::Rc;
 use std::str::Chars;
 
@@ -244,10 +245,28 @@ impl TryFrom<Rc<RefCell<Chars<'_>>>> for TokenStream {
     }
 }
 
+impl fmt::Display for TokenStream {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for tt in &self.tokens {
+            write!(f, "{}", tt)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 enum TokenTree {
     Group(Group),
     Token(Token),
+}
+
+impl fmt::Display for TokenTree {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TokenTree::Group(g) => write!(f, "{}", g.token_stream),
+            TokenTree::Token(t) => write!(f, "{}", t),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -261,6 +280,17 @@ enum Token {
     Literal(Literal),
     LeftParen,
     RightParen,
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Token::Ident(s) => write!(f, "{}", s),
+            Token::Literal(l) => write!(f, " {} ", l),
+            Token::LeftParen => write!(f, "("),
+            Token::RightParen => write!(f, ")"),
+        }
+    }
 }
 
 impl From<String> for TokenTree {
@@ -278,11 +308,20 @@ enum Literal {
     UInt32(u32),
 }
 
+impl fmt::Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Literal::UInt32(u) => write!(f, "{}", u),
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let prog = String::from("(first (list 1 (+ 2 3) 9))");
     println!("prog: {}", prog);
     let chars = Rc::new(RefCell::new(prog.chars()));
     let input: TokenStream = chars.try_into()?;
+    println!("tokenstream: {}", input);
     println!("tokenstream: {:?}", input);
 
     let ast: Expr = input.parse()?;
