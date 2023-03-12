@@ -303,7 +303,7 @@ impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Token::Ident(s) => write!(f, "{}", s),
-            Token::Literal(l) => write!(f, " {} ", l),
+            Token::Literal(l) => write!(f, " {}", l),
             Token::LeftParen => write!(f, "("),
             Token::RightParen => write!(f, ")"),
         }
